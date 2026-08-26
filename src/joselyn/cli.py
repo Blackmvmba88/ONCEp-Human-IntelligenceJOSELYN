@@ -9,16 +9,23 @@ from .models import Actor
 from .runtime import HumanIntelligenceRuntime
 
 
+def _add_format_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--format", choices=("table", "json"), default="table")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="joselyn",
         description="JOSELYN CLI — technical cockpit for PONCE",
     )
-    parser.add_argument("--format", choices=("table", "json"), default="table")
 
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("status", help="show runtime status")
-    sub.add_parser("version", help="show CLI version")
+
+    status = sub.add_parser("status", help="show runtime status")
+    _add_format_option(status)
+
+    version = sub.add_parser("version", help="show CLI version")
+    _add_format_option(version)
 
     event = sub.add_parser("event", help="domain event tools")
     event_sub = event.add_subparsers(dest="event_command", required=True)
@@ -26,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument("--type", default="employee.created", dest="event_type")
     demo.add_argument("--tenant", default="local")
     demo.add_argument("--actor", default="joselyn-cli")
+    _add_format_option(demo)
 
     return parser
 
