@@ -7,6 +7,7 @@ from typing import Sequence
 from . import __version__
 from .intake import capabilities, load_path
 from .models import Actor
+from .people import PeopleStore
 from .runtime import HumanIntelligenceRuntime
 from .work import WorkRequest, assess_automation
 
@@ -37,6 +38,25 @@ def build_parser() -> argparse.ArgumentParser:
     inspect = intake_sub.add_parser("inspect", help="inspect CSV/TSV/JSON without persisting it")
     inspect.add_argument("path")
     _add_format_option(inspect)
+
+    people = sub.add_parser("people", help="durable People Core registry")
+    people_sub = people.add_subparsers(dest="people_command", required=True)
+
+    people_import = people_sub.add_parser("import", help="normalize and persist HR records")
+    people_import.add_argument("path")
+    people_import.add_argument("--db", default="joselyn.db")
+    _add_format_option(people_import)
+
+    people_list = people_sub.add_parser("list", help="list/search people records")
+    people_list.add_argument("--db", default="joselyn.db")
+    people_list.add_argument("--query")
+    people_list.add_argument("--limit", type=int, default=50)
+    _add_format_option(people_list)
+
+    people_show = people_sub.add_parser("show", help="show one person by identity, employee ID or email")
+    people_show.add_argument("identifier")
+    people_show.add_argument("--db", default="joselyn.db")
+    _add_format_option(people_show)
 
     work = sub.add_parser("work", help="measure work value and automation opportunity")
     work_sub = work.add_subparsers(dest="work_command", required=True)
@@ -75,6 +95,21 @@ def _print_mapping(data: dict[str, object], output_format: str) -> None:
     width = max(len(str(key)) for key in data)
     for key, value in data.items():
         print(f"{key:<{width}}  {value}")
+
+
+def _print_rows(rows: list[dict[str, object]], output_format: str) -> None:
+    if output_format == "json":
+        print(json.dumps(rows, indent=2, default=str, ensure_ascii=False))
+        return
+    if not rows:
+        print("No records")
+        return
+    for row in rows:
+        identity = str(row.get("employee_id") or row.get("identity_key") or "-")
+        name = str(row.get("full_name") or "-")
+        position = str(row.get("position") or "-")
+        department = str(row.get("department") or "-")
+        print(f"{identity:<18} {name:<32} {position:<28} {department}")
 
 
 def _print_formats(output_format: str) -> None:
@@ -128,6 +163,35 @@ def main(argv: Sequence[str] | None = None) -> int:
             _print_mapping({"error": f"{type(exc).__name__}: {exc}"}, args.format)
             return 1
         _print_mapping(result, args.format)
+        return 0
+
+    if args.command == "people" and args.people_command == "import":
+        try:
+            batch = load_path(args.path)
+            with PeopleStore(args.db) as store:
+                result = store.import_batch(batch)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            _print_mapping({"error": f"{type(exc).__name__}: {exc}"}, args.format)
+            return 1
+        payload = result.to_dict()
+        payload["source"] = batch.source
+        payload["duplicates_detected"] = len(batch.duplicate_keys)
+        _print_mapping(payload, args.format)
+        return 0
+
+    if args.command == "people" and args.people_command == "list":
+        with PeopleStore(args.db) as store:
+            rows = store.list(query=args.query, limit=args.limit)
+        _print_rows(rows, args.format)
+        return 0
+
+    if args.command == "people" and args.people_command == "show":
+        with PeopleStore(args.db) as store:
+            record = store.get(args.identifier)
+        if record is None:
+            _print_mapping({"error": "person not found"}, args.format)
+            return 1
+        _print_mapping(record, args.format)
         return 0
 
     if args.command == "work" and args.work_command == "assess":
