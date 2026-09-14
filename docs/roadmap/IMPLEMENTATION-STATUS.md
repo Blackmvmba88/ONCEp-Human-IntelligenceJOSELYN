@@ -1,5 +1,74 @@
 # Implementation Status
 
+## v0.2 — JOSELYN Intake + People Registry + Work-Value Loop
+
+Status: **implemented on `feat/joselyn-intake-automation-v1`**.
+
+This slice turns the People Core roadmap into a first useful HR data workflow without pretending OCR, speech, enterprise RBAC, or production persistence already exist.
+
+### Implemented
+
+- Common intake contract for structured HR records.
+- CSV ingestion.
+- TSV ingestion.
+- JSON object / array ingestion.
+- Spanish/English header aliases for common employee fields.
+- Preservation of unmapped company-specific fields.
+- Per-field source provenance.
+- Duplicate detection using employee ID or email.
+- Visible warnings when stable identity or name is missing.
+- Format capability registry for implemented and planned adapters.
+- SQLite development People Store.
+- Idempotent upsert by stable identity.
+- `joselyn formats`.
+- `joselyn intake inspect <path>`.
+- `joselyn people import <path>`.
+- `joselyn people list [--query ...]`.
+- `joselyn people show <id|email|identity-key>`.
+- HR work-request model with purpose, requester, effort and impact.
+- Automation-opportunity scoring for repetitive work.
+- Explicit human-judgment and compliance penalties in automation scoring.
+- Unit tests for intake normalization, duplicates, persistence, update behavior and automation assessment.
+- Product spec for universal list → detail → relationships/source → actions interaction.
+
+### Planned adapters behind the same intake contract
+
+- XLSX / XLS
+- PDF
+- image / camera capture
+- audio / voice dictation
+- forms
+- APIs / webhooks
+- watched folders / recurring exports
+
+### Current boundary
+
+The SQLite registry is a local development implementation. It is not presented as enterprise production storage. Image OCR and speech-to-structured-data are intentionally listed as adapters until a real implementation and validation path exists.
+
+Employment decisions remain human decisions; automation scoring applies to **tasks and workflows**, not to employee worthiness or hiring/promotion/termination decisions.
+
+## Example local verification
+
+```bash
+python -m pip install -e .
+python -m unittest discover -s tests -v
+
+joselyn formats
+joselyn intake inspect people.csv --format json
+joselyn people import people.csv --db joselyn.db
+joselyn people list --db joselyn.db
+joselyn people show EMP-204 --db joselyn.db --format json
+joselyn work assess \
+  --title "Consolidar incidencias" \
+  --purpose "Preparar pre-nomina" \
+  --requester "HR Manager" \
+  --frequency 8 \
+  --minutes 45 \
+  --structured-inputs \
+  --repeated-steps \
+  --format json
+```
+
 ## v0.1 — JOSELYN Runtime Bootstrap
 
 Status: **implemented on feature branch**.
@@ -37,42 +106,17 @@ This slice converts the specification-first repository into its first executable
 
 Those components remain governed by the roadmap and require their own implementation decisions.
 
-## Local verification
-
-```bash
-python -m pip install -e .
-python -m unittest discover -s tests -v
-
-joselyn status
-joselyn version
-joselyn event demo --type employee.created --format json
-```
-
 ## Next executable slice
-
-**People Core vertical path:**
-
-```text
-Employee command
-    ↓
-validation
-    ↓
-authoritative state change
-    ↓
-employee.created / employee.updated
-    ↓
-audit
-    ↓
-projection handler
-```
 
 Recommended next deliverables:
 
-1. SQLite development repository behind a storage interface.
-2. Employee aggregate and repository contract.
-3. `joselyn employee create/list/show`.
-4. immutable employee history entries.
-5. RBAC policy interface with deny-by-default behavior.
-6. approval boundary scaffolding for sensitive mutations.
+1. XLSX adapter with explicit sheet/column mapping.
+2. immutable employee history entries.
+3. dry-run import diff before persistence.
+4. deny-by-default RBAC scaffold.
+5. approval boundary scaffolding for sensitive mutations.
+6. image/document adapter producing proposed fields plus provenance.
+7. speech/dictation adapter producing structured notes and requests.
+8. reusable catalog/detail surface for candidates, documents, vacancies, tickets and assets.
 
 This keeps the roadmap order intact: domain truth → permissions → events → deterministic automation → audit → AI assistance.
