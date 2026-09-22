@@ -9,11 +9,17 @@ from .intake import capabilities, load_path
 from .models import Actor
 from .people import PeopleStore
 from .runtime import HumanIntelligenceRuntime
+from .security import AccessDenied, Principal, ROLE_PERMISSIONS
 from .work import WorkRequest, assess_automation
 
 
 def _add_format_option(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--format", choices=("table", "json"), default="table")
+
+
+def _add_principal_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--actor", default="joselyn-cli")
+    parser.add_argument("--role", choices=tuple(ROLE_PERMISSIONS), required=True)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -45,18 +51,34 @@ def build_parser() -> argparse.ArgumentParser:
     people_import = people_sub.add_parser("import", help="normalize and persist HR records")
     people_import.add_argument("path")
     people_import.add_argument("--db", default="joselyn.db")
+    _add_principal_options(people_import)
     _add_format_option(people_import)
 
     people_list = people_sub.add_parser("list", help="list/search people records")
     people_list.add_argument("--db", default="joselyn.db")
     people_list.add_argument("--query")
     people_list.add_argument("--limit", type=int, default=50)
+    _add_principal_options(people_list)
     _add_format_option(people_list)
 
-    people_show = people_sub.add_parser("show", help="show one person by identity, employee ID or email")
+    people_show = people_sub.add_parser(
+        "show",
+        help="show one person by permitted identifier, employee ID or email",
+    )
     people_show.add_argument("identifier")
     people_show.add_argument("--db", default="joselyn.db")
+    _add_principal_options(people_show)
     _add_format_option(people_show)
+
+    people_history = people_sub.add_parser(
+        "history",
+        help="show immutable employee history",
+    )
+    people_history.add_argument("identifier")
+    people_history.add_argument("--db", default="joselyn.db")
+    people_history.add_argument("--limit", type=int, default=50)
+    _add_principal_options(people_history)
+    _add_format_option(people_history)
 
     work = sub.add_parser("work", help="measure work value and automation opportunity")
     work_sub = work.add_subparsers(dest="work_command", required=True)
@@ -112,6 +134,25 @@ def _print_rows(rows: list[dict[str, object]], output_format: str) -> None:
         print(f"{identity:<18} {name:<32} {position:<28} {department}")
 
 
+def _print_history(rows: list[dict[str, object]], output_format: str) -> None:
+    if output_format == "json":
+        print(json.dumps(rows, indent=2, default=str, ensure_ascii=False))
+        return
+    if not rows:
+        print("No history")
+        return
+    for row in rows:
+        occurred = str(row.get("occurred_at") or "-")
+        operation = str(row.get("operation") or "-")
+        actor = str(row.get("actor_id") or "-")
+        changed = ", ".join(row.get("changed_fields") or [])
+        correlation = str(row.get("correlation_id") or "-")
+        print(
+            f"{occurred}  {operation:<8} actor={actor:<18} "
+            f"changed={changed} correlation={correlation}"
+        )
+
+
 def _print_formats(output_format: str) -> None:
     items = capabilities()
     if output_format == "json":
@@ -137,6 +178,10 @@ def _intake_summary(path: str) -> dict[str, object]:
         "mapped_fields": mapped_fields,
         "unmapped_fields": extra_fields,
     }
+
+
+def _principal(args: argparse.Namespace) -> Principal:
+    return Principal(id=args.actor, role=args.role)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -168,31 +213,54 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "people" and args.people_command == "import":
         try:
             batch = load_path(args.path)
-            with PeopleStore(args.db) as store:
+            with PeopleStore(
+                args.db,
+                principal=_principal(args),
+                runtime=runtime,
+            ) as store:
                 result = store.import_batch(batch)
-        except (OSError, ValueError, json.JSONDecodeError) as exc:
+        except (OSError, ValueError, json.JSONDecodeError, AccessDenied) as exc:
             _print_mapping({"error": f"{type(exc).__name__}: {exc}"}, args.format)
             return 1
         payload = result.to_dict()
         payload["source"] = batch.source
         payload["duplicates_detected"] = len(batch.duplicate_keys)
+        payload["audit_records"] = len(runtime.audit_log)
         _print_mapping(payload, args.format)
         return 0
 
     if args.command == "people" and args.people_command == "list":
-        with PeopleStore(args.db) as store:
-            rows = store.list(query=args.query, limit=args.limit)
+        try:
+            with PeopleStore(args.db, principal=_principal(args)) as store:
+                rows = store.list(query=args.query, limit=args.limit)
+        except (ValueError, AccessDenied) as exc:
+            _print_mapping({"error": f"{type(exc).__name__}: {exc}"}, args.format)
+            return 1
         _print_rows(rows, args.format)
         return 0
 
     if args.command == "people" and args.people_command == "show":
-        with PeopleStore(args.db) as store:
-            record = store.get(args.identifier)
+        try:
+            with PeopleStore(args.db, principal=_principal(args)) as store:
+                record = store.get(args.identifier)
+        except (ValueError, AccessDenied) as exc:
+            _print_mapping({"error": f"{type(exc).__name__}: {exc}"}, args.format)
+            return 1
         if record is None:
-            _print_mapping({"error": "person not found"}, args.format)
+            _print_mapping({"error": "person not found or identifier not permitted"}, args.format)
             return 1
         _print_mapping(record, args.format)
         return 0
+
+    if args.command == "people" and args.people_command == "history":
+        try:
+            with PeopleStore(args.db, principal=_principal(args)) as store:
+                rows = store.history(args.identifier, limit=args.limit)
+        except (ValueError, AccessDenied) as exc:
+            _print_mapping({"error": f"{type(exc).__name__}: {exc}"}, args.format)
+            return 1
+        _print_history(rows, args.format)
+        return 0 if rows else 1
 
     if args.command == "work" and args.work_command == "assess":
         try:
