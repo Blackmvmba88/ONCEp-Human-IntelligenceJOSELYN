@@ -1,8 +1,36 @@
 # Implementation Status
 
+## v0.3 — People Core authorization + immutable history
+
+Status: **implemented on `feat/joselyn-people-core-v2`; pending merge**.
+
+This slice moves People Core from a local registry toward a security-aware execution boundary.
+
+### Implemented
+
+- deny-by-default `Principal` authorization;
+- explicit role/permission map based on the documented PONCE roles;
+- field-level read boundaries for basic, contact, extra and provenance data;
+- masking of contact fields for roles without contact permission;
+- lookup/search restrictions that prevent email-address probing by roles without contact access;
+- explicit import/update authorization;
+- immutable `people_history` rows for accepted creates/updates;
+- actor ID, actor role and correlation ID persisted with each history entry;
+- `employee.created` / `employee.updated` runtime events correlated with People history;
+- no-op re-imports from the same source skip mutation/history;
+- `joselyn people history`;
+- explicit `--actor` + `--role` context for People CLI commands;
+- tests covering denial, masking, history, event correlation, idempotence and contact-identity probing.
+
+### Current boundary
+
+This remains a local SQLite development implementation. Authentication, tenant-aware ABAC, employee self-service subject binding, approval workflows and production persistence are still separate decisions.
+
+GitHub-hosted CI is currently blocked before workflow steps start. See `docs/ci/CI-RECOVERY.md`. Local unit tests and CLI smoke tests are the temporary execution gate.
+
 ## v0.2 — JOSELYN Intake + People Registry + Work-Value Loop
 
-Status: **implemented on `feat/joselyn-intake-automation-v1`**.
+Status: **merged to `main`**.
 
 This slice turns the People Core roadmap into a first useful HR data workflow without pretending OCR, speech, enterprise RBAC, or production persistence already exist.
 
