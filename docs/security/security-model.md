@@ -148,3 +148,22 @@ Development, staging and production must use isolated credentials and data. Prod
 ## Security gate
 
 No automation is considered production-ready until its permission model, audit behavior, failure behavior and rollback/reconciliation path have been specified.
+
+
+## Implemented authorization scaffold — People Core v0.3
+
+The first executable RBAC boundary is implemented in `joselyn.security` and enforced by `PeopleStore`.
+
+Current properties:
+
+- deny-by-default when no principal is supplied;
+- explicit role-to-permission mapping;
+- separate permissions for basic employee data, contact data, extra fields, provenance, import/update and history;
+- contact fields are masked when the role lacks contact access;
+- query/lookup behavior also respects field permissions, so a caller cannot probe an email address merely by searching for it;
+- employee history access is separately authorized;
+- every accepted People mutation records actor, role and correlation ID.
+
+The `Employee` role intentionally has no broad People Core read permission yet. Safe employee self-service requires subject-aware authorization (for example, "this principal may read their own employee record") rather than a role-only grant.
+
+This is a development scaffold, not the final enterprise authorization model. Tenant-aware policy evaluation, authentication, approval policy and field-level ABAC remain future work.
