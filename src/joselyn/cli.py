@@ -5,6 +5,7 @@ import json
 from typing import Sequence
 
 from . import __version__
+from .app import serve_app
 from .intake import capabilities, load_path
 from .models import Actor
 from .people import PeopleStore
@@ -32,6 +33,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     formats = sub.add_parser("formats", help="show HR intake format capabilities")
     _add_format_option(formats)
+
+    app = sub.add_parser("app", help="open the JOSELYN executive HR app")
+    app.add_argument("--db", default="joselyn.db")
+    app.add_argument("--host", default="127.0.0.1")
+    app.add_argument("--port", type=int, default=8765)
+    app.add_argument("--no-browser", action="store_true")
 
     intake = sub.add_parser("intake", help="inspect and normalize HR source data")
     intake_sub = intake.add_subparsers(dest="intake_command", required=True)
@@ -154,6 +161,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "formats":
         _print_formats(args.format)
+        return 0
+
+    if args.command == "app":
+        serve_app(
+            db_path=args.db,
+            host=args.host,
+            port=args.port,
+            open_browser=not args.no_browser,
+        )
         return 0
 
     if args.command == "intake" and args.intake_command == "inspect":
